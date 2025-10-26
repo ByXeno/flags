@@ -28,8 +28,11 @@ typedef struct {
     flag_type_t type;
 } flag_t;
 
-bool flags_parse(flag_t* flags,uint32_t count,uint32_t argc,char** argv);
+bool flags_parse(flag_t* flags,uint32_t count,int32_t* argc,char*** argv);
+void flags_order(int32_t* argc,char*** argv);
 void flags_error(void);
+char* flags_program_name(void);
+static char* program_name;
 static char* error_value;
 static flag_error_code_t error_code;
 
@@ -37,13 +40,21 @@ static flag_error_code_t error_code;
 
 #ifdef FLAGS_IMPLEMENTATION
 
-bool flags_parse
-(flag_t* flags,uint32_t count,uint32_t argc,char** argv)
+char* flags_program_name(void)
 {
-    uint32_t i = 1;
-    for(;i < argc;++i)
+    return program_name;
+}
+
+bool flags_parse
+(flag_t* flags,uint32_t count,int32_t* argc,char*** argv)
+{
+    program_name = **argv;
+    (*argv)++;
+    (*argc)--;
+    uint32_t i = 0;
+    for(;i < *argc;++i)
     {
-        char* item = argv[i];
+        char* item = (*argv)[i];
         bool ignore = false;
         if(*item != '-') continue;
         /* Support for both single or double - commands */
@@ -93,7 +104,7 @@ bool flags_parse
                         uint64_t val = 0;
                         if(!eq)
                         {
-                            if(i+1 >= argc)
+                            if(i+1 >= *argc)
                             {
                                 error_value = (char*)cur.flag;
                                 error_code = expected_parameter;
@@ -101,7 +112,7 @@ bool flags_parse
                             }
                             *argv[i] = 0;
                             i++;
-                            val_ptr = argv[i];
+                            val_ptr = (*argv)[i];
                         }
                         else { val_ptr = eq+1;}
                         val = strtoull(val_ptr,&end,10);
@@ -122,7 +133,7 @@ bool flags_parse
                         double val = 0;
                         if(!eq)
                         {
-                            if(i+1 >= argc)
+                            if(i+1 >= *argc)
                             {
                                 error_value = (char*)cur.flag;
                                 error_code = expected_parameter;
@@ -130,7 +141,7 @@ bool flags_parse
                             }
                             *argv[i] = 0;
                             i++;
-                            val_ptr = argv[i];
+                            val_ptr = (*argv)[i];
                         }
                         else
                         { val_ptr = eq+1;}
@@ -164,8 +175,20 @@ bool flags_parse
         /* Marked as used */
         *argv[i] = 0;
     }
+    flags_order(argc,argv);
     error_code = success;
     return true;
+}
+
+void flags_order(int32_t* argc,char*** argv)
+{
+    int32_t dst = 0;
+    for (int32_t src = 0; src < *argc; ++src) {
+        if (argv[src]) {
+            argv[dst++] = argv[src];
+        }
+    }
+    *argc = dst;
 }
 
 void flags_error(void)
