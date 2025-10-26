@@ -9,6 +9,8 @@ typedef enum {
     as_i64,
     as_oct,
     as_double,
+    as_size,
+    as_str,
 } flag_type_t;
 
 typedef enum {
@@ -31,6 +33,7 @@ typedef struct {
 
 bool flags_parse(flag_t* flags,uint32_t count,int32_t* argc,char*** argv);
 void flags_order(int32_t* argc,char*** argv);
+void flags_help(flag_t* flags,uint32_t count);
 void flags_error(void);
 char* flags_program_name(void);
 static char* program_name;
@@ -82,6 +85,58 @@ bool flags_parse
                 char* end = 0;
                 switch(cur.type)
                 {
+                    case as_size: {
+                        uint64_t val = 0;
+                        if(!eq)
+                        {
+                            if(i+1 >= *argc)
+                            {
+                                error_value = (char*)cur.flag;
+                                error_code = expected_parameter;
+                                return false;
+                            }
+                            argv[i] = 0;
+                            i++;
+                            val_ptr = (*argv)[i];
+                        }
+                        else { val_ptr = eq+1;}
+                        val = strtoull(val_ptr,&end,10);
+                        if(*end != '\0') {
+                            error_value = val_ptr;
+                            error_code = expected_integer;
+                            return false;
+                        }
+                        if (val == ULLONG_MAX && errno == ERANGE) {
+                            error_value = val_ptr;
+                            error_code = integer_overflow;
+                            return false;
+                        }
+                        if(!flag_size_calculate_multiplier(end,&val))
+                        {
+                            error_value = end;
+                            error_code = invalid_size_suffix;
+                            return false;
+                        }
+                        if(!ignore)
+                        {*(uint64_t*)cur.addr = val;}
+                    } break;
+                    case as_str: {
+                        if(!eq)
+                        {
+                            if(i+1 >= *argc)
+                            {
+                                error_value = (char*)cur.flag;
+                                error_code = expected_parameter;
+                                return false;
+                            }
+                            argv[i] = 0;
+                            i++;
+                            val_ptr = (*argv)[i];
+                        }
+                        else { val_ptr = eq+1;}
+                        if(!ignore)
+                        {*(char**)cur.addr = val_ptr;}
+                    } break;
                     case as_bool:{
                         bool val = true;
                         if(eq)
@@ -100,7 +155,7 @@ bool flags_parse
                         if(!ignore)
                         {*(bool*)cur.addr = val;}
                     } break;
-                    case as_oct:
+                case as_oct:
                     case as_i64:{
                         uint64_t val = 0;
                         if(!eq)
@@ -206,6 +261,38 @@ void flags_order(int32_t* argc,char*** argv)
     (*argv)++;
 }
 
+void flags_help(FILE*out,flag_t* flags,uint32_t count)
+{
+    uint32_t i = 0;
+    fprintf(out,"Usage:\n");
+    for(;i < count;++i)
+    {
+        flag_t cur = flags[i];
+        switch(cur.type)
+        {
+            case as_bool: {
+                fprintf(out,"    -%s / -%s=n/y/t/f\n",cur.flag,cur.flag);
+            } break;
+            case as_i64: {
+                fprintf(out,"    -%s=<int> / -%s <int>\n",cur.flag,cur.flag);
+            } break;
+            case as_str: {
+                fprintf(out,"    -%s=<str> / -%s <str>\n",cur.flag,cur.flag);
+            } break;
+            case as_size: {
+                fprintf(out,"    -%s=<size><suffix> / -%s <str><suffix>\n",cur.flag,cur.flag);
+            } break;
+            case as_double: {
+                fprintf(out,"    -%s=<double> / -%s <double>\n",cur.flag,cur.flag);
+            } break;
+            case as_oct: {
+                fprintf(out,"    -%s=<oct> / -%s <oct>\n",cur.flag,cur.flag);
+            } break;
+        }
+        fprintf(out,"    Description:%s\n",cur.desc);
+    }
+}
+
 void flags_error(void)
 {
     switch(error_code)
@@ -249,5 +336,49 @@ void flags_error(void)
         default: fprintf(stderr,"Unknown error code: %d\n",error_code);return;
     }
 }
+
+bool flag_size_calculate_multiplier(char* endptr,unsigned long long int* result)
+{
+    if (strcmp(endptr, "c") == 0) {
+        (*result) *= 1ULL;
+    } else if (strcmp(endptr, "w") == 0) {
+        (*result) *= 2ULL;
+    } else if (strcmp(endptr, "b") == 0) {
+        (*result) *= 512ULL;
+    } else if (strcmp(endptr, "kB") == 0) {
+        (*result) *= 1000ULL;
+    } else if (strcmp(endptr, "K") == 0 || strcmp(endptr, "KiB") == 0) {
+        (*result) *= 1024ULL;
+    } else if (strcmp(endptr, "MB") == 0) {
+        (*result) *= 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "M") == 0 || strcmp(endptr, "MiB") == 0 || strcmp(endptr, "xM") == 0) {
+        (*result) *= 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "GB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "G") == 0 || strcmp(endptr, "GiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "TB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "T") == 0 || strcmp(endptr, "TiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "PB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "P") == 0 || strcmp(endptr, "PiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "EB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "E") == 0 || strcmp(endptr, "EiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "ZB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "Z") == 0 || strcmp(endptr, "ZiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    } else if (strcmp(endptr, "YB") == 0) {
+        (*result) *= 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    } else if (strcmp(endptr, "Y") == 0 || strcmp(endptr, "YiB") == 0) {
+        (*result) *= 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+     } else if (strcmp(endptr, "") != 0) {return false;}
+     return true;
+ }
 
 #endif // FLAGS_IMPLEMENTATION
