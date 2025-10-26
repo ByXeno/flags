@@ -2,6 +2,11 @@
 #ifndef FLAGS_H_
 #define FLAGS_H_
 
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 #include <limits.h>
 
 typedef enum {
@@ -20,6 +25,7 @@ typedef enum {
     expected_double,
     integer_overflow,
     double_overflow,
+    invalid_size_suffix,
     unknown_type,
     unknown_flag,
 } flag_error_code_t;
@@ -33,13 +39,14 @@ typedef struct {
 
 bool flags_parse(flag_t* flags,uint32_t count,int32_t* argc,char*** argv);
 void flags_order(int32_t* argc,char*** argv);
-void flags_help(flag_t* flags,uint32_t count);
+bool flag_size_calculate_multiplier(char* endptr,uint64_t* result);
+void flags_help(FILE* out,flag_t* flags,uint32_t count);
 void flags_error(void);
 char* flags_program_name(void);
 static char* program_name;
 static char* error_value;
 static flag_error_code_t error_code;
-
+        
 #endif // FLAGS_H_
 
 #ifdef FLAGS_IMPLEMENTATION
@@ -95,17 +102,12 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            argv[i] = 0;
+                            (*argv)[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
                         else { val_ptr = eq+1;}
                         val = strtoull(val_ptr,&end,10);
-                        if(*end != '\0') {
-                            error_value = val_ptr;
-                            error_code = expected_integer;
-                            return false;
-                        }
                         if (val == ULLONG_MAX && errno == ERANGE) {
                             error_value = val_ptr;
                             error_code = integer_overflow;
@@ -129,7 +131,7 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            argv[i] = 0;
+                            (*argv)[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
@@ -166,7 +168,7 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            argv[i] = 0;
+                            (*argv)[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
@@ -186,7 +188,15 @@ bool flags_parse
                         {
                             if(cur.type == as_oct)
                             {
-                                val = ((val / 100) << 6) | (((val / 10) % 10) << 3) | (val % 10);
+                                uint64_t oct_val = 0;
+                                uint64_t temp = val;
+                                uint64_t shift = 0;
+                                while (temp > 0) {
+                                    oct_val |= (temp % 10) << shift;
+                                    shift += 3;
+                                    temp /= 10;
+                                }
+                                val = oct_val;
                             }
                             *(uint64_t*)cur.addr = val;
                         }
@@ -201,7 +211,7 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            argv[i] = 0;
+                            (*argv)[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
@@ -235,31 +245,23 @@ bool flags_parse
         return false;
     end:
         /* Marked as used */
-        argv[i] = 0;
+        (*argv)[i] = 0;
     }
     flags_order(argc,argv);
     error_code = success;
     return true;
 }
 
-void flags_order(int32_t* argc,char*** argv)
+void flags_order(int32_t* argc, char*** argv)
 {
-    int32_t i = 1;
-    for(;i < *argc; ++i) {
-        if(argv[i]) continue;
-        for (int32_t j = i+1; j < *argc; ++j) {
-            if(!(argv[j]))
-            {
-                argv[i] = argv[j];
-                argv[j] = 0;
-                break;
-            }
-        }
-        if(!argv[i]) break;
+    int32_t out = 0;
+    for (int32_t i = 1; i < *argc; ++i) {
+        if ((*argv)[i])
+            (*argv)[out++] = (*argv)[i];
     }
-    *argc = i-1;
-    (*argv)++;
+    *argc = out;
 }
+
 
 void flags_help(FILE*out,flag_t* flags,uint32_t count)
 {
@@ -300,7 +302,7 @@ void flags_error(void)
         case success: return;
         case expected_parameter: {
             fprintf(stderr,
-            "Flag error: '%s' flag is expecting a parametr but got nothing!\n",
+            "Flag error: '%s' flag expects a parameter but got nothing!\n",
             error_value);
         } return;
         case expected_integer: {
@@ -315,12 +317,12 @@ void flags_error(void)
         } return;
         case integer_overflow: {
             fprintf(stderr,
-            "Flag error: '%s' casued and integer overflow!\n",
+            "Flag error: '%s' caused and integer overflow!\n",
             error_value);
         } return;
         case double_overflow: {
             fprintf(stderr,
-            "Flag error: '%s' casued and double overflow!\n",
+            "Flag error: '%s' caused and double overflow!\n",
             error_value);
         } return;
         case unknown_type: {
@@ -330,14 +332,14 @@ void flags_error(void)
         } return;
         case unknown_flag: {
             fprintf(stderr,
-            "Flag error: '%s' is not a vaild flag!\n",
+            "Flag error: '%s' is not a valid flag!\n",
             error_value);
         } return;
         default: fprintf(stderr,"Unknown error code: %d\n",error_code);return;
     }
 }
 
-bool flag_size_calculate_multiplier(char* endptr,unsigned long long int* result)
+bool flag_size_calculate_multiplier(char* endptr,uint64_t* result)
 {
     if (strcmp(endptr, "c") == 0) {
         (*result) *= 1ULL;
