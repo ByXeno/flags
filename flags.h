@@ -7,6 +7,7 @@
 typedef enum {
     as_bool,
     as_i64,
+    as_oct,
     as_double,
 } flag_type_t;
 
@@ -49,9 +50,7 @@ bool flags_parse
 (flag_t* flags,uint32_t count,int32_t* argc,char*** argv)
 {
     program_name = **argv;
-    (*argv)++;
-    (*argc)--;
-    uint32_t i = 0;
+    uint32_t i = 1;
     for(;i < *argc;++i)
     {
         char* item = (*argv)[i];
@@ -97,9 +96,11 @@ bool flags_parse
                             if(strcmp(eq+1,"false") == 0) {val = false;}
                             if(strcmp(eq+1,"f") == 0) {val = false;}
                         }
+                        argv[i] = 0;
                         if(!ignore)
                         {*(bool*)cur.addr = val;}
                     } break;
+                    case as_oct:
                     case as_i64:{
                         uint64_t val = 0;
                         if(!eq)
@@ -110,7 +111,7 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            *argv[i] = 0;
+                            argv[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
@@ -127,7 +128,13 @@ bool flags_parse
                             return false;
                         }
                         if(!ignore)
-                        {*(uint64_t*)cur.addr = val;}
+                        {
+                            if(cur.type == as_oct)
+                            {
+                                val = ((val / 100) << 6) | (((val / 10) % 10) << 3) | (val % 10);
+                            }
+                            *(uint64_t*)cur.addr = val;
+                        }
                     } break;
                     case as_double:{
                         double val = 0;
@@ -139,7 +146,7 @@ bool flags_parse
                                 error_code = expected_parameter;
                                 return false;
                             }
-                            *argv[i] = 0;
+                            argv[i] = 0;
                             i++;
                             val_ptr = (*argv)[i];
                         }
@@ -173,7 +180,7 @@ bool flags_parse
         return false;
     end:
         /* Marked as used */
-        *argv[i] = 0;
+        argv[i] = 0;
     }
     flags_order(argc,argv);
     error_code = success;
@@ -182,13 +189,21 @@ bool flags_parse
 
 void flags_order(int32_t* argc,char*** argv)
 {
-    int32_t dst = 0;
-    for (int32_t src = 0; src < *argc; ++src) {
-        if (argv[src]) {
-            argv[dst++] = argv[src];
+    int32_t i = 1;
+    for(;i < *argc; ++i) {
+        if(argv[i]) continue;
+        for (int32_t j = i+1; j < *argc; ++j) {
+            if(!(argv[j]))
+            {
+                argv[i] = argv[j];
+                argv[j] = 0;
+                break;
+            }
         }
+        if(!argv[i]) break;
     }
-    *argc = dst;
+    *argc = i-1;
+    (*argv)++;
 }
 
 void flags_error(void)
