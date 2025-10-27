@@ -2,6 +2,7 @@
 #ifndef FLAGS_H_
 #define FLAGS_H_
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
